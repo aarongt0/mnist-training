@@ -11,8 +11,11 @@ dsigmoid_vect = np.vectorize(dsigmoid)
 
 PARAMS_FNAME = 'params.npz'
 BATCH_SIZE = 100
+LR = 0.01
+EPOCHS = 1 # NOTE: For testing
 
 sizes = [784, 100, 10]
+n_out = sizes[-1]
 n_layers = len(sizes) - 1
 
 X, y = fetch_openml("mnist_784", version=1, as_frame=False, return_X_y=True)
@@ -23,10 +26,8 @@ y = y.astype(np.int64)
 X_train, X_test = X[:60000], X[60000:] 
 y_train, y_test = y[:60000], y[60000:] 
 
-y_train = y_train[:, np.newaxis]
-y_test = y_test[:, np.newaxis]
 
-epochs: int = round(len(X_train) / BATCH_SIZE) # Round to prevent floating-point error
+iters: int = round(len(X_train) / BATCH_SIZE) # Round to prevent floating-point error
 
 # Batch-first (in rows x out columns)
 def init_params():
@@ -65,46 +66,59 @@ perm = rng.permutation(len(X_train)) # Shuffle indexes
 
 # %%
 # Training Loop
-while batch_pos < len(X_train):
+for iter in range(iters):
 
     idx = perm[batch_pos: batch_pos + BATCH_SIZE] # 100 random indexes from 0 - 60k
 
-    batch_cost_sum: np.float64 = 0
-    num_correct = 0
+    y_batch = y_train[idx]                        
+    Y = np.zeros((BATCH_SIZE, n_out))
+    Y[np.arange(BATCH_SIZE), y_batch] = 1.0 # Set drawn number's index to value of 1.0, else 0
 
-    # Feed forward
-    for i in idx:
-        # %%
-        i = 34
-        # Single image
-        A = X_train[i]
-        A = A[np.newaxis, :]
-        for W, B in zip(weights, biases):
-            Z = A @ W + B
-            A = sigmoid_vect(Z)
+    A = [
+        np.empty((BATCH_SIZE, sizes[i]))
+        for i in range(len(sizes))
+    ]
 
-        
-        # Check if model got correct
-        prediction = np.argmax(A[0])
-        Y = y_train[i][0] # Actual number drawn (represented as an index of output neurons)
+    Z = A[1:] # Same shape
 
-        if (prediction == Y): num_correct += 1
-        # %%
-        # Calculate Cost TODO
+    # --- Forward Pass
+    A[0] = X_train[idx] # Assign input values
 
-        mse = 0
-        # NOTE: The indexes (num below) happen to be the actual value we are training, hence the lack of a dictionary
-        for num, val in enumerate(A[0]):
-            correctness = 0 if num != Y else 1
-            se = np.square(val - correctness)
-            print(f"Squaring ({val} - {correctness}) because num = {num} and Y = {Y}")
-            mse += se
+    for layer in range(n_layers):
+        Z[layer] = A[layer] @ weights[layer] + biases[layer]
+        A[layer + 1] = sigmoid_vect(Z[layer])
 
-        mse = mse / 10
-        # %%
+    # --- Calculate accuracy
+    predictions = np.argmax(A[-1], axis=1)
+    truth = np.argmax(Y, axis=1)
+    accuracy = np.mean(predictions == truth)
+
+    loss_average = np.sum(np.square(A[-1] - Y)) / BATCH_SIZE
+
+    print(f"Iteration {iter}: Loss = {loss_average}. Accuracy = {accuracy * 100:.2f}%.")
+
+    # --- Back Propogate
+    dCdA = 2 * (A[-1] - Y)
+
+    for layer in reversed(range(n_layers)):
+        dAdZ = dsigmoid_vect(Z[layer])
+        dCdZ = dCdA * dAdZ # Multiply element-wise to preserve individual training images' effect on network
+
+        # Collapse batch into usable gradients
+        W_grad = (A[layer].T @ dCdZ) / BATCH_SIZE # Outer product of previous layer and dCdZ -> calculates direction for each individual weight in the layer, then averages
+        B_grad = np.mean(dCdZ, axis=0, keepdims=True) # dZdB = 1, so just average terms
+
+        # Compute next layer's dCdA before modifying weights
+        dCdA = dCdZ @ weights[layer].T
+
+        weights[layer] -= (LR * W_grad)
+        biases[layer] -= (LR * B_grad)
+
+
     batch_pos += BATCH_SIZE
+
 # %%
-        
+
 
 
  # Assign next starting position for next epoch

@@ -7,5 +7,3 @@ v_sigmoid = np.vectorize(sigmoid)
 
 def dsigmoid(x):
     return sigmoid(x) * (1 - sigmoid(x))
-
-v_dsigmoid = np.vectorize(dsigmoid)
