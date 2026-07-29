@@ -1,125 +1,156 @@
-# %%
-
+import tkinter
 import numpy as np
-from functools import partial
-from sklearn.datasets import fetch_openml
-from pathlib import Path
-from functions import sigmoid, dsigmoid
+import sys
+import tkinter as tk
+from tkinter import ttk
+from tkterminal import Terminal
+import model
+from matplotlib.backends.backend_tkagg import (
+    FigureCanvasTkAgg, NavigationToolbar2Tk)
+from matplotlib.figure import Figure
+import sv_ttk
 
-sigmoid_vect = np.vectorize(sigmoid)
-dsigmoid_vect = np.vectorize(dsigmoid)
+root = tk.Tk()
 
-PARAMS_FNAME = 'params.npz'
-BATCH_SIZE = 100
-LR = 0.01
-EPOCHS = 1 # NOTE: For testing
+root.title("MNIST Training")
+root.geometry("1000x1000")
 
-sizes = [784, 100, 10]
-n_out = sizes[-1]
-n_layers = len(sizes) - 1
+class TextRedirector(object):
+    def __init__(self, widget):
+        self.widget = widget
 
-X, y = fetch_openml("mnist_784", version=1, as_frame=False, return_X_y=True)
+    def write(self, str):
+        self.widget.insert(tk.END, str)
+        self.widget.see(tk.END)
 
-X = X.astype(np.float32) / 255.0
-y = y.astype(np.int64)
+    def flush(self):
+        pass
 
-X_train, X_test = X[:60000], X[60000:] 
-y_train, y_test = y[:60000], y[60000:] 
+total_accuracies = []
+total_costs = []
+total_epochs = 0
 
+lr = 0.01
+plot_x = list(range(total_epochs))
+plot_y = total_costs
 
-iters: int = round(len(X_train) / BATCH_SIZE) # Round to prevent floating-point error
+fig = Figure(figsize=(5, 4), dpi=100)
+ax = fig.add_subplot(111)
+ax.plot(plot_x, plot_y)
+ax.set_xlabel("Epoch")
+ax.set_ylabel("Average Cost")
 
-# Batch-first (in rows x out columns)
-def init_params():
-    weights = [
-        np.random.randn(sizes[i], sizes[i + 1]) * np.sqrt(2/(sizes[i] + sizes[i+1]))
-        for i in range(n_layers)
-    ]
+canvas = FigureCanvasTkAgg(fig, master=root)   
+canvas.draw()                                   
+canvas.get_tk_widget().pack(side="bottom", fill=tk.BOTH, expand=False)
 
-    biases = [
-        np.zeros((1, sizes[i+1]))
-        for i in range(n_layers)
-    ]
+line, = ax.plot([], [])
 
-    return weights, biases
+def refresh_plot():
+    line.set_data(range(len(total_costs)), total_costs)
+    ax.relim()            
+    ax.autoscale_view()   
+    canvas.draw_idle()
 
-def save_params(weights, biases):
-    np.savez(
-        PARAMS_FNAME,
-        **{f"W{i}": W for i, W in enumerate(weights)}, 
-        **{f"b{i}": b for i, b in enumerate(biases)},
-    )
+def try_run_epochs():
+    global running
+    if running:
+        return
+    n_epochs = int(epoch_entry.get())
+    if n_epochs < 1:
+        return
+    running = True
+    _train_one(0, n_epochs)
 
-def load_params():
-    data = np.load(PARAMS_FNAME)
-    return ([data[f"W{i}"] for i in range(n_layers)],
-            [data[f"b{i}"] for i in range(n_layers)])
+def _train_one(i, n_epochs):
+    global total_epochs, running
+    if i >= n_epochs:
+        running = False
+        return
+    acc, cost = model.run_epoch(lr, i)
+    total_accuracies.append(acc)
+    total_costs.append(cost)
+    total_epochs += 1
+    print(f"Epoch {total_epochs} accuracy: {acc * 100:.2f}%")
+    refresh_plot()
+    root.after(1, lambda: _train_one(i + 1, n_epochs))
 
-weights, biases = load_params() if Path(PARAMS_FNAME).is_file() else init_params()
-
-# %%
-
-batch_pos = 0
-rng = np.random.default_rng(0)  
-
-perm = rng.permutation(len(X_train)) # Shuffle indexes
-
-# %%
-# Training Loop
-for iter in range(iters):
-
-    idx = perm[batch_pos: batch_pos + BATCH_SIZE] # 100 random indexes from 0 - 60k
-
-    y_batch = y_train[idx]                        
-    Y = np.zeros((BATCH_SIZE, n_out))
-    Y[np.arange(BATCH_SIZE), y_batch] = 1.0 # Set drawn number's index to value of 1.0, else 0
-
-    A = [
-        np.empty((BATCH_SIZE, sizes[i]))
-        for i in range(len(sizes))
-    ]
-
-    Z = A[1:] # Same shape
-
-    # --- Forward Pass
-    A[0] = X_train[idx] # Assign input values
-
-    for layer in range(n_layers):
-        Z[layer] = A[layer] @ weights[layer] + biases[layer]
-        A[layer + 1] = sigmoid_vect(Z[layer])
-
-    # --- Calculate accuracy
-    predictions = np.argmax(A[-1], axis=1)
-    truth = np.argmax(Y, axis=1)
-    accuracy = np.mean(predictions == truth)
-
-    loss_average = np.sum(np.square(A[-1] - Y)) / BATCH_SIZE
-
-    print(f"Iteration {iter}: Loss = {loss_average}. Accuracy = {accuracy * 100:.2f}%.")
-
-    # --- Back Propogate
-    dCdA = 2 * (A[-1] - Y)
-
-    for layer in reversed(range(n_layers)):
-        dAdZ = dsigmoid_vect(Z[layer])
-        dCdZ = dCdA * dAdZ # Multiply element-wise to preserve individual training images' effect on network
-
-        # Collapse batch into usable gradients
-        W_grad = (A[layer].T @ dCdZ) / BATCH_SIZE # Outer product of previous layer and dCdZ -> calculates direction for each individual weight in the layer, then averages
-        B_grad = np.mean(dCdZ, axis=0, keepdims=True) # dZdB = 1, so just average terms
-
-        # Compute next layer's dCdA before modifying weights
-        dCdA = dCdZ @ weights[layer].T
-
-        weights[layer] -= (LR * W_grad)
-        biases[layer] -= (LR * B_grad)
-
-
-    batch_pos += BATCH_SIZE
-
-# %%
+def lr_changed(value):
+    global lr
+    if (running): return
+    lr = float(value)
+    lr_label.config(text=f"Learning Rate: {float(value):.4f}")
 
 
 
- # Assign next starting position for next epoch
+title_label = ttk.Label(root, text="Train a model on the MNIST Database!", font=("Arial", 24, "bold"))
+title_label.pack(side="top")
 
+slider = ttk.Scale(
+    root,
+    from_=0.0001,      
+    to=0.1,       
+    orient="horizontal", 
+    length=300,     
+    command=lr_changed 
+)
+slider.pack(pady=10, side="top")
+
+lr_label = ttk.Label(root, text="Learning Rate: 0.01")
+lr_label.pack(side="top")
+
+terminal = Terminal(root)
+terminal.shell = False
+terminal.pack(side="left")
+
+sys.stdout = TextRedirector(terminal)
+
+epoch_label = ttk.Label(root, text="Epochs:")
+epoch_label.pack(side="top")
+
+epoch_entry = ttk.Entry(root, width=30)
+epoch_entry.pack(side="top")
+
+running: bool = False
+
+def save_params():
+    global running
+    if running:
+        return
+    model.save_params(model.weights, model.biases)
+
+def delete_params():
+    global running
+    if running:
+        return
+    model.delete_params()
+
+
+def test_model():
+    global running
+    if running:
+        return
+    running = True
+    acc = model.run_test_set()
+    print(f"Test set accuracy = {acc * 100:.2f}%")
+    running = False
+
+epoch_send = ttk.Button(root, text="Train", command=try_run_epochs)
+epoch_send.pack()
+
+model_test = ttk.Button(root, text="Test Model", command=test_model)
+model_test.pack()
+
+params_save = ttk.Button(root, text="Save/Overwrite Paramaters", command=save_params)
+params_save.pack(side="bottom")
+
+params_del = ttk.Button(root, text="Delete Paramaters", command=delete_params)
+params_del.pack(side="bottom")
+
+
+
+sv_ttk.set_theme("dark", root)
+
+print("")
+
+root.mainloop()
