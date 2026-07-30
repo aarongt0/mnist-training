@@ -5,7 +5,7 @@ from tkinter import ttk
 from tkterminal import Terminal
 import model
 from matplotlib.backends.backend_tkagg import (
-    FigureCanvasTkAgg, NavigationToolbar2Tk)
+    FigureCanvasTkAgg)
 from matplotlib.figure import Figure
 import sv_ttk
 

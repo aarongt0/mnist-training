@@ -1,5 +1,4 @@
 import numpy as np
-from functools import partial
 from sklearn.datasets import fetch_openml
 from pathlib import Path
 import os

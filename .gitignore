@@ -1,0 +1,4 @@
+# Compiled at runtime
+
+__pycache__/
+*.py[cod]
