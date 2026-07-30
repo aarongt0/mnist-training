@@ -66,6 +66,13 @@ def load_params():
 
 weights, biases = load_params() if Path(PARAMS_FNAME).is_file() else init_params()
 
+def reset_params():
+    global weights, biases
+    weights, biases = init_params()
+    print("Weights and Biases reset.")
+
+
+
 # Training Loop
 def run_epoch(lr: float, epochNum):
 
@@ -147,7 +154,7 @@ def run_test_set():
     Z = [
             np.empty((SET_SIZE, sizes[i + 1]))
             for i in range(n_layers)
-        ]
+    ]
 
     # --- Forward Pass
     A[0] = X_test

@@ -1,4 +1,3 @@
-import tkinter
 import numpy as np
 import sys
 import tkinter as tk
@@ -9,6 +8,9 @@ from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 from matplotlib.figure import Figure
 import sv_ttk
+
+MIN_LR = 0.01
+MAX_LR = 2.0
 
 root = tk.Tk()
 
@@ -30,7 +32,7 @@ total_accuracies = []
 total_costs = []
 total_epochs = 0
 
-lr = 0.01
+lr = 0.5
 plot_x = list(range(total_epochs))
 plot_y = total_costs
 
@@ -63,7 +65,7 @@ def try_run_epochs():
     _train_one(0, n_epochs)
 
 def _train_one(i, n_epochs):
-    global total_epochs, running
+    global total_epochs, running, lr
     if i >= n_epochs:
         running = False
         return
@@ -81,15 +83,13 @@ def lr_changed(value):
     lr = float(value)
     lr_label.config(text=f"Learning Rate: {float(value):.4f}")
 
-
-
 title_label = ttk.Label(root, text="Train a model on the MNIST Database!", font=("Arial", 24, "bold"))
 title_label.pack(side="top")
 
 slider = ttk.Scale(
     root,
-    from_=0.0001,      
-    to=0.1,       
+    from_=MIN_LR,      
+    to=MAX_LR,       
     orient="horizontal", 
     length=300,     
     command=lr_changed 
@@ -125,6 +125,14 @@ def delete_params():
         return
     model.delete_params()
 
+def reset_params():
+    global running, total_epochs, total_accuracies, total_costs
+    if running:
+        return
+    model.reset_params()
+    total_epochs = 0
+    total_costs = []
+    total_accuracies = []
 
 def test_model():
     global running
@@ -141,13 +149,14 @@ epoch_send.pack()
 model_test = ttk.Button(root, text="Test Model", command=test_model)
 model_test.pack()
 
+params_reset = ttk.Button(root, text="Reset Parameters", command=reset_params)
+params_reset.pack(side="bottom", pady=10)
+
 params_save = ttk.Button(root, text="Save/Overwrite Paramaters", command=save_params)
-params_save.pack(side="bottom")
+params_save.pack(side="bottom", pady=10)
 
 params_del = ttk.Button(root, text="Delete Paramaters", command=delete_params)
-params_del.pack(side="bottom")
-
-
+params_del.pack(side="bottom", pady=10)
 
 sv_ttk.set_theme("dark", root)
 
