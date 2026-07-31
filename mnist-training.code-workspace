@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "mnist-training",
+			"path": "."
+		},
+		{
+			"name": "MNIST_Docs3_pages",
+			"path": "../../Downloads/MNIST_Docs3_pages/MNIST_Docs3_pages"
+		}
+	],
+	"settings": {}
+}
